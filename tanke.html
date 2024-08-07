@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>坦克游戏</title>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            height: 100vh;
+            background-color: #333;
+        }
+        canvas {
+            background-color: #fff;
+            margin-bottom: 10px;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .control-btn {
+            width: 50px;
+            height: 50px;
+            margin: 5px;
+            background-color: #666;
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+        .control-btn:active {
+            background-color: #888;
+        }
+        .direction-controls {
+            display: flex;
+            flex-direction: column;
+        }
+        .horizontal-controls {
+            display: flex;
+        }
+        #restartBtn {
+            display: none;
+            margin-top: 10px;
+            padding: 10px 20px;
+            background-color: #666;
+            color: #fff;
+            cursor: pointer;
+            user-select: none;
+        }
+        #restartBtn:active {
+            background-color: #888;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div class="controls">
+        <div class="direction-controls">
+            <div id="upBtn" class="control-btn">上</div>
+            <div class="horizontal-controls">
+                <div id="leftBtn" class="control-btn">左</div>
+                <div id="downBtn" class="control-btn">下</div>
+                <div id="rightBtn" class="control-btn">右</div>
+            </div>
+        </div>
+        <div id="shootBtn" class="control-btn">射击</div>
+    </div>
+    <div id="restartBtn">重新开始</div>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const playerTank = {
+            x: canvas.width / 2 - 25,
+            y: canvas.height - 50,
+            width: 50,
+            height: 50,
+            speed: 2,
+            dx: 0,
+            dy: 0
+        };
+
+        const bullets = [];
+        const enemyTanks = [];
+        const enemyBullets = [];
+        const obstacles = [];
+        let bulletCooldown = 0;
+        let enemyBulletCooldown = 0;
+        let animationId;
+        let score = 0;
+        let level = 1;
+        let playerLives = 3;
+        let baseHealth = 3;
+
+        function createEnemyTank(x, y) {
+            return { x, y, width: 50, height: 50, speed: 1.5, dx: 0, dy: 0, cooldown: 100 };
+        }
+
+        function createObstacles() {
+            obstacles.push({ x: 200, y: 200, width: 100, height: 100 });
+            obstacles.push({ x: 500, y: 300, width: 100, height: 100 });
+        }
+
+        function drawTank(tank) {
+            ctx.fillStyle = 'green';
+            ctx.fillRect(tank.x, tank.y, tank.width, tank.height);
+        }
+
+        function drawBullets() {
+            ctx.fillStyle = 'red';
+            bullets.forEach(bullet => ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height));
+            ctx.fillStyle = 'yellow';
+            enemyBullets.forEach(bullet => ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height));
+        }
+
+        function drawObstacles() {
+            ctx.fillStyle = 'gray';
+            obstacles.forEach(obstacle => ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height));
+        }
+
+        function drawBase() {
+            ctx.fillStyle = 'blue';
+            ctx.fillRect(canvas.width / 2 - 25, canvas.height - 50, 50, 50);
+        }
+
+        function moveTank(tank) {
+            tank.x += tank.dx;
+            tank.y += tank.dy;
+
+            // 碰撞检测
+            if (tank.x < 0) tank.x = 0;
+            if (tank.x + tank.width > canvas.width) tank.x = canvas.width - tank.width;
+            if (tank.y < 0) tank.y = 0;
+            if (tank.y + tank.height > canvas.height) tank.y = canvas.height - tank.height;
+
+            obstacles.forEach(obstacle => {
+                if (tank.x < obstacle.x + obstacle.width &&
+                    tank.x + tank.width > obstacle.x &&
+                    tank.y < obstacle.y + obstacle.height &&
+                    tank.y + tank.height > obstacle.y) {
+                    tank.x -= tank.dx;
+                    tank.y -= tank.dy;
+                }
+            });
+        }
+
+        function moveBullets() {
+            bullets.forEach((bullet, index) => {
+                bullet.y -= 5;
+                if (bullet.y + bullet.height < 0) bullets.splice(index, 1);
+            });
+            enemyBullets.forEach((bullet, index) => {
+                bullet.y += 3;
+                if (bullet.y > canvas.height) enemyBullets.splice(index, 1);
+            });
+        }
+
+        function updateEnemyTanks() {
+            enemyTanks.forEach(tank => {
+                if (Math.random() < 0.01) {
+                    tank.dx = (Math.random() - 0.5) * tank.speed;
+                    tank.dy = (Math.random() - 0.5) * tank.speed;
+                }
+
+                tank.x += tank.dx;
+                tank.y += tank.dy;
+
+                if (tank.x < 0) tank.x = 0;
+                if (tank.x + tank.width > canvas.width) tank.x = canvas.width - tank.width;
+                if (tank.y < 0) tank.y = 0;
+                if (tank.y + tank.height > canvas.height) tank.y = canvas.height - tank.height;
+
+                obstacles.forEach(obstacle => {
+                    if (tank.x < obstacle.x + obstacle.width &&
+                        tank.x + tank.width > obstacle.x &&
+                        tank.y < obstacle.y + obstacle.height &&
+                        tank.y + tank.height > obstacle.y) {
+                        tank.x -= tank.dx;
+                        tank.y -= tank.dy;
+                    }
+                });
+
+                if (Math.random() < 0.03 && tank.cooldown === 0) {
+                    enemyBullets.push({
+                        x: tank.x + tank.width / 2 - 2.5,
+                        y: tank.y + tank.height,
+                        width: 5,
+                        height: 10
+                    });
+                    tank.cooldown = 100;
+                }
+
+                if (tank.cooldown > 0) tank.cooldown--;
+
+                // 检查是否撞到基地
+                if (tank.x < canvas.width / 2 + 25 &&
+                    tank.x + tank.width > canvas.width / 2 - 25 &&
+                    tank.y + tank.height > canvas.height - 50) {
+                    baseHealth--;
+                    if (baseHealth <= 0) {
+                        gameOver('基地被摧毁，游戏结束！');
+                    }
+                }
+            });
+        }
+
+        function detectCollisions() {
+            bullets.forEach((bullet, bulletIndex) => {
+                enemyTanks.forEach((tank, tankIndex) => {
+                    if (bullet.x < tank.x + tank.width &&
+                        bullet.x + bullet.width > tank.x &&
+                        bullet.y < tank.y + tank.height &&
+                        bullet.y + bullet.height > tank.y) {
+                        bullets.splice(bulletIndex, 1);
+                        enemyTanks.splice(tankIndex, 1);
+                        score += 100;
+                        if (enemyTanks.length === 0) {
+                            level++;
+                            for (let i = 0; i < 5 + level; i++) {
+                                enemyTanks.push(createEnemyTank(Math.random() * (canvas.width - 40), Math.random() * (canvas.height / 2)));
+                            }
+                        }
+                    }
+                });
+            });
+
+            enemyBullets.forEach((bullet, bulletIndex) => {
+                if (bullet.x < playerTank.x + playerTank.width &&
+                    bullet.x + bullet.width > playerTank.x &&
+                    bullet.y < playerTank.y + playerTank.height &&
+                    bullet.y + bullet.height > playerTank.y) {
+                    enemyBullets.splice(bulletIndex, 1);
+                    playerLives--;
+                    if (playerLives <= 0) {
+                        gameOver('你被击败了，游戏结束！');
+                    }
+                }
+            });
+
+            enemyBullets.forEach((bullet, bulletIndex) => {
+                if (bullet.x < canvas.width / 2 + 25 &&
+                    bullet.x + bullet.width > canvas.width / 2 - 25 &&
+                    bullet.y + bullet.height > canvas.height - 50) {
+                    baseHealth--;
+                    enemyBullets.splice(bulletIndex, 1);
+                    if (baseHealth <= 0) {
+                        gameOver('基地被摧毁，游戏结束！');
+                    }
+                }
+            });
+        }
+
+        function resetGame() {
+            score = 0;
+            level = 1;
+            playerLives = 3;
+            baseHealth = 3;
+            bullets.length = 0;
+            enemyBullets.length = 0;
+            enemyTanks.length = 0;
+            createObstacles();
+            for (let i = 0; i < 5; i++) {
+                enemyTanks.push(createEnemyTank(Math.random() * (canvas.width - 40), Math.random() * (canvas.height / 2)));
+            }
+            playerTank.x = canvas.width / 2 - 25;
+            playerTank.y = canvas.height - 50;
+            playerTank.dx = 0;
+            playerTank.dy = 0;
+            document.getElementById('restartBtn').style.display = 'none';
+            animationId = requestAnimationFrame(draw);
+        }
+
+        function gameOver(message) {
+            cancelAnimationFrame(animationId);
+            ctx.fillStyle = 'black';
+            ctx.font = '30px Arial';
+            ctx.fillText(message, canvas.width / 2 - 150, canvas.height / 2);
+            document.getElementById('restartBtn').style.display = 'block';
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawTank(playerTank);
+            drawBullets();
+            drawObstacles();
+            drawBase();
+            enemyTanks.forEach(drawTank);
+            moveTank(playerTank);
+            moveBullets();
+            updateEnemyTanks();
+            detectCollisions();
+
+            ctx.fillStyle = 'black';
+            ctx.font = '20px Arial';
+            ctx.fillText('得分: ' + score, 10, 20);
+            ctx.fillText('生命: ' + playerLives, 10, 50);
+            ctx.fillText('基地健康: ' + baseHealth, 10, 80);
+
+            animationId = requestAnimationFrame(draw);
+        }
+
+        document.getElementById('upBtn').addEventListener('click', () => {
+            playerTank.dy = -playerTank.speed;
+            playerTank.dx = 0;
+        });
+
+        document.getElementById('downBtn').addEventListener('click', () => {
+            playerTank.dy = playerTank.speed;
+            playerTank.dx = 0;
+        });
+
+        document.getElementById('leftBtn').addEventListener('click', () => {
+            playerTank.dx = -playerTank.speed;
+            playerTank.dy = 0;
+        });
+
+        document.getElementById('rightBtn').addEventListener('click', () => {
+            playerTank.dx = playerTank.speed;
+            playerTank.dy = 0;
+        });
+
+        document.getElementById('shootBtn').addEventListener('click', () => {
+            if (bulletCooldown === 0) {
+                bullets.push({
+                    x: playerTank.x + playerTank.width / 2 - 2.5,
+                    y: playerTank.y,
+                    width: 5,
+                    height: 10
+                });
+                bulletCooldown = 20;
+            }
+        });
+
+        document.getElementById('restartBtn').addEventListener('click', resetGame);
+
+        window.addEventListener('keydown', (e) => {
+            switch (e.key) {
+                case 'ArrowUp':
+                    playerTank.dy = -playerTank.speed;
+                    playerTank.dx = 0;
+                    break;
+                case 'ArrowDown':
+                    playerTank.dy = playerTank.speed;
+                    playerTank.dx = 0;
+                    break;
+                case 'ArrowLeft':
+                    playerTank.dx = -playerTank.speed;
+                    playerTank.dy = 0;
+                    break;
+                case 'ArrowRight':
+                    playerTank.dx = playerTank.speed;
+                    playerTank.dy = 0;
+                    break;
+                case ' ':
+                    if (bulletCooldown === 0) {
+                        bullets.push({
+                            x: playerTank.x + playerTank.width / 2 - 2.5,
+                            y: playerTank.y,
+                            width: 5,
+                            height: 10
+                        });
+                        bulletCooldown = 20;
+                    }
+                    break;
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            switch (e.key) {
+                case 'ArrowUp':
+                case 'ArrowDown':
+                    playerTank.dy = 0;
+                    break;
+                case 'ArrowLeft':
+                case 'ArrowRight':
+                    playerTank.dx = 0;
+                    break;
+            }
+        });
+
+        function updateCooldowns() {
+            if (bulletCooldown > 0) bulletCooldown--;
+            if (enemyBulletCooldown > 0) enemyBulletCooldown--;
+        }
+
+        function gameLoop() {
+            updateCooldowns();
+            moveTank(playerTank);
+            moveBullets();
+            updateEnemyTanks();
+            detectCollisions();
+        }
+
+        resetGame();
+        setInterval(gameLoop, 1000 / 60);
+    </script>
+</body>
+</html>
